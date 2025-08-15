@@ -11,6 +11,9 @@ dotenv.load_dotenv()
 screen = pygame.display.set_mode((0, 0), pygame.FULLSCREEN)
 pygame.display.set_caption("Prize Wheel")
 
+# Hide mouse cursor
+pygame.mouse.set_visible(False)
+
 # Initialize wheel object
 wheel = Wheel()
 
