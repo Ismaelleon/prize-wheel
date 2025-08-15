@@ -38,6 +38,16 @@ class Wheel:
         self.radius = 350
         self.margin = 100
         self.prize_index = None
+        self.start_time = None
+        self.counting_time = False
+        self.playing_sound = False
+
+        self.sounds = {
+            "coin-in": pygame.mixer.Sound("assets/coin-in.mp3"),
+            "playing": pygame.mixer.Sound("assets/playing.mp3"),
+            "you-lose": pygame.mixer.Sound("assets/you-lose.mp3"),
+            "you-win": pygame.mixer.Sound("assets/you-win.mp3"),
+        }
 
     def render(self, screen):
         # Update screen
@@ -98,9 +108,32 @@ class Wheel:
         pointer_points = [
             (center[0] - self.radius - 30, center[1] + 25),
             (center[0] - self.radius - 30, center[1] - 25),
-            (center[0] - self.radius + 30, center[1])
+            (center[0] - self.radius + 25, center[1])
         ]
         pygame.draw.polygon(screen, WHITE, pointer_points)
+
+        if self.state == "show_prize":
+            # Render modal
+            pygame.draw.rect(screen, COLORS[self.prize_index], (center[0] - 200, self.margin, 400, screen.get_height() - self.margin * 2))
+
+            # Render text
+            title = "¡Felicitaciones!"
+            subtitle = "Ganaste un " + self.prizes[self.prize_index]
+
+            if self.prizes[self.prize_index] == "Perdiste":
+                title = "Lo sentimos, perdiste :("
+                subtitle = "Te deseamos suerte la próxima"
+
+            # Render title
+            modal_title = title_font.render(title, True, WHITE)
+            modal_title = pygame.transform.rotate(modal_title, 90)
+
+            # Render subtitle
+            modal_subtitle = medium_font.render(subtitle, True, WHITE)
+            modal_subtitle = pygame.transform.rotate(modal_subtitle, 90)
+
+            screen.blit(modal_title, (center[0] - 100, center[1] - modal_title.get_height() // 2))
+            screen.blit(modal_subtitle, (center[0] + 100, center[1] - modal_subtitle.get_height() // 2))
 
     def events(self):
         for event in pygame.event.get():
@@ -110,24 +143,26 @@ class Wheel:
                     sys.exit()
                 elif event.key == pygame.K_c:
                     self.credits += 1
+                    self.sounds["coin-in"].play()
                 elif event.key == pygame.K_p:
-                    if self.credits > 0:
-                        if self.state == "idle":
+                    if self.state == "idle":
+                        if self.credits > 0:
                             self.state = "playing"
+                            self.sounds["playing"].play()
                             self.credits -= 1
                             self.spins += 1
 
                             # Every 100 spins, win a rare prize
                             if self.spins != 0 and self.spins % 100 == 0:
-                                # Select a random index from rare prizes array and add the length of common prices
+                                # Select a random index from rare prizes array and add the length of common prizes
                                 self.prize_index = len(self.common_prizes) - 1 + random.randrange(0, len(self.rare_prizes) - 1)
                             else:
                                 # Select a random index from common prizes array
                                 self.prize_index = random.randrange(0, len(self.common_prizes) - 1)
-                    else:
-                        if self.state == "idle":
-                            self.state = "no_credits"
 
+                        else:
+                            if self.state == "idle":
+                                pass
 
     def update(self):
         # Rotate wheel
@@ -141,11 +176,39 @@ class Wheel:
 
         if self.state == "stopping":
             spin = (10 * self.triangle_angle)
-            if self.rotation_angle >= self.initial_rotation + spin * 3 - (self.triangle_angle * self.prize_index):
+            if self.rotation_angle >= self.initial_rotation + spin * 5 - (self.triangle_angle * self.prize_index):
                 self.speed = 0
                 half_triangle_angle = self.triangle_angle / 2
                 self.rotation_angle = half_triangle_angle * round(self.rotation_angle / half_triangle_angle)
-                self.state = "idle"
 
-        if self.state == "no_credits":
-            pass
+                if self.playing_sound == False:
+                    if self.prizes[self.prize_index] == "Perdiste":
+                        self.sounds["you-lose"].play()
+                    else:
+                        self.sounds["you-win"].play()
+
+                    self.playing_sound = True
+
+                if not self.counting_time:
+                    self.start_time = pygame.time.get_ticks()
+                    self.counting_time = True
+                else:
+                    elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000
+
+                    if elapsed_time > 2:
+                        self.counting_time = False
+                        self.state = "show_prize"
+
+        if self.state == "show_prize":
+            if not self.counting_time:
+                self.start_time = pygame.time.get_ticks()
+                self.counting_time = True
+            else:
+                elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000
+
+                if elapsed_time > 10:
+                    self.counting_time = False
+                    self.playing_sound = False
+                    self.state = "idle"
+                    self.rotation_angle = self.initial_rotation
+                    self.start_time = None
