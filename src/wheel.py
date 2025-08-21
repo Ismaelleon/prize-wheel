@@ -66,7 +66,6 @@ class Wheel:
 
     def reset(self):
         self.state = "idle"
-        self.rotation_angle = self.initial_rotation
         self.start_time = 0
         self.elapsed_time = 0
         self.counting_time = False
@@ -280,6 +279,7 @@ class Wheel:
                 self.speed = 0
                 half_triangle_angle = self.triangle_angle / 2
                 self.rotation_angle = half_triangle_angle * round(self.rotation_angle / half_triangle_angle)
+                self.initial_rotation = self.rotation_angle
 
                 if not pygame.mixer.get_busy():
                     if self.prizes[self.prize_index] == "Perdiste":
