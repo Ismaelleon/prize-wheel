@@ -1,19 +1,13 @@
-import pygame, sys, os, math, random
+import pygame, sys, os, math, random, time
+#from confetti import Confetti
 
 # CONSTANTS 
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
+DEBUG_COLOR = (0, 255, 0)
 COLORS = [
-    (3, 7, 30),
-    (55, 6, 23),
-    (106, 4, 15),
-    (157, 2, 8),
-    (208, 0, 0),
-    (220, 47, 2),
-    (232, 93, 4),
-    (244, 140, 6),
-    (250, 163, 7),
-    (255, 186, 8)
+    (175, 29, 31),
+    (94, 0, 10),
 ]
 
 class Wheel:
@@ -26,6 +20,7 @@ class Wheel:
 
         self.triangle_angle = ((360 * math.pi / 180) / len(self.prizes))
 
+        self.debug = False
         self.state = "idle"
         self.credits = 0
         self.spins = 0
@@ -33,30 +28,70 @@ class Wheel:
         self.initial_rotation = self.triangle_angle * 4.5
         self.rotation_angle = self.initial_rotation
         self.speed = 0
-        self.max_speed = 0.05
+        self.max_speed = 0.075
         self.acceleration = 0.001
         self.radius = 350
         self.margin = 100
         self.prize_index = None
-        self.start_time = None
+        self.start_time = 0
+        self.elapsed_time = 0
         self.counting_time = False
-        self.playing_sound = False
+        self.light_radius = 15
+        self.playing_song = False
+
+        self.images = {
+            "title": pygame.image.load("assets/images/title.png")
+        }
+
+        # Rotate all images
+        for key in self.images:
+            self.images[key] = pygame.transform.rotate(self.images[key], 90)
 
         self.sounds = {
-            "coin-in": pygame.mixer.Sound("assets/coin-in.mp3"),
-            "playing": pygame.mixer.Sound("assets/playing.mp3"),
-            "you-lose": pygame.mixer.Sound("assets/you-lose.mp3"),
-            "you-win": pygame.mixer.Sound("assets/you-win.mp3"),
+            "coin-in": pygame.mixer.Sound("assets/sounds/coin-in.mp3"),
+            "playing": pygame.mixer.Sound("assets/sounds/playing.mp3"),
+            "you-lose": pygame.mixer.Sound("assets/sounds/you-lose.mp3"),
+            "you-win": pygame.mixer.Sound("assets/sounds/you-win.mp3"),
         }
+
+        _, _, files = next(os.walk("assets/music/"))
+        self.songs = []
+        self.current_song = 0
+        
+        for i, _ in enumerate(files):
+            song = "song_" + str(i + 1)
+
+            song_file = pygame.mixer.Sound("assets/music/" + song + ".mp3")
+            self.songs.append(song_file)
+
+    def reset(self):
+        self.state = "idle"
+        self.rotation_angle = self.initial_rotation
+        self.start_time = 0
+        self.elapsed_time = 0
+        self.counting_time = False
+
+    def wait(self):
+        if not self.counting_time:
+            self.start_time = pygame.time.get_ticks()
+            self.counting_time = True
+        else:
+            self.elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000
 
     def render(self, screen):
         # Update screen
         pygame.display.update()
 
-        # Clear screen
+        # Background
         pygame.draw.rect(screen, BLACK, (0, 0, screen.get_width(), screen.get_height()))
 
         # Render title
+        new_height = screen.get_height() - self.margin * 2
+        new_width = new_height * self.images["title"].get_width() / self.images["title"].get_height()
+
+        title = pygame.transform.scale(self.images["title"], (new_width, new_height))
+        screen.blit(title, (0, screen.get_height() // 2 - title.get_height() // 2))
+        """
         title_font = pygame.font.Font(None, 64)
         title = title_font.render(self.title, True, WHITE)
         title = pygame.transform.rotate(title, 90)
@@ -66,12 +101,18 @@ class Wheel:
         subtitle = title_font.render(self.subtitle, True, WHITE)
         subtitle = pygame.transform.rotate(subtitle, 90)
         screen.blit(subtitle, (self.margin + title.get_width() + 32, screen.get_height() // 2 - subtitle.get_height() // 2))
+        """
 
         # Render credits
         medium_font = pygame.font.Font(None, 48)
         credits_text = medium_font.render("Créditos: " + str(self.credits), True, WHITE)
         credits_text = pygame.transform.rotate(credits_text, 90)
         screen.blit(credits_text, (screen.get_width() - self.margin - credits_text.get_width(), self.margin))
+
+        # Render current song
+        song_text = medium_font.render("Canción " + str(self.current_song), True, WHITE)
+        song_text = pygame.transform.rotate(song_text, 90)
+        screen.blit(song_text, (screen.get_width() - self.margin - song_text.get_width(), screen.get_height() - self.margin - song_text.get_height()))
 
 
         # Render wheel
@@ -92,17 +133,37 @@ class Wheel:
 
             # Render prize names
             mid_angle = angle + (self.triangle_angle / 2)  # middle of the wedge
-            prize = small_font.render(self.prizes[i], True, WHITE)
+            prize = medium_font.render(self.prizes[i], True, (240, 224, 103))
 
             # Convert radians -> degrees and rotate so it's upright in the wedge
-            prize = pygame.transform.rotate(prize, -math.degrees(mid_angle) + 270)
+            text_angle_deg = -math.degrees(mid_angle)
+            prize = pygame.transform.rotate(prize, text_angle_deg)
 
             # Position text along radius, centered
-            text_radius = self.radius * 0.9
+            text_radius = self.radius * 0.5
             text_x = center[0] + math.cos(mid_angle) * text_radius - prize.get_width() / 2
             text_y = center[1] + math.sin(mid_angle) * text_radius - prize.get_height() / 2
 
             screen.blit(prize, (text_x, text_y))
+
+        # Render circle border
+        pygame.draw.circle(screen, (65, 18, 12), center, self.radius + 5, width=25)
+
+        # Render light bulbs
+        for i in range(36):
+            angle = (10 * math.pi / 180) * i
+
+            if math.cos(angle) != -1:
+                bulb_radius = 10
+                x = center[0] + math.cos(angle) * (self.radius - bulb_radius / 2)
+                y = center[1] + math.sin(angle) * (self.radius - bulb_radius / 2)
+                
+                pygame.draw.circle(screen, (247, 205, 45), (x, y), bulb_radius)
+
+                transparent_surf = pygame.Surface((self.light_radius * 2, self.light_radius * 2), pygame.SRCALPHA)
+                pygame.draw.circle(transparent_surf, (247, 205, 45, 50), (self.light_radius, self.light_radius), self.light_radius)
+
+                screen.blit(transparent_surf, (x - self.light_radius, y - self.light_radius))
 
         # Render pointer 
         pointer_points = [
@@ -110,30 +171,46 @@ class Wheel:
             (center[0] - self.radius - 30, center[1] - 25),
             (center[0] - self.radius + 25, center[1])
         ]
-        pygame.draw.polygon(screen, WHITE, pointer_points)
+        pygame.draw.polygon(screen, (244, 178, 1), pointer_points)
 
+        # Render win message
         if self.state == "show_prize":
-            # Render modal
-            pygame.draw.rect(screen, COLORS[self.prize_index], (center[0] - 200, self.margin, 400, screen.get_height() - self.margin * 2))
+            if self.prizes[self.prize_index] != "Perdiste":
+                text = medium_font.render("¡Felicitaciones, ganaste!", True, WHITE)
+                text = pygame.transform.rotate(text, 90)
 
-            # Render text
-            title = "¡Felicitaciones!"
-            subtitle = "Ganaste un " + self.prizes[self.prize_index]
+                screen.blit(text, (screen.get_width() - self.margin * 3, screen.get_height() // 2 - text.get_height() // 2))
+            else:
+                text = medium_font.render("Lo sentimos, perdiste :(", True, WHITE)
+                text = pygame.transform.rotate(text, 90)
 
-            if self.prizes[self.prize_index] == "Perdiste":
-                title = "Lo sentimos, perdiste :("
-                subtitle = "Te deseamos suerte la próxima"
+                screen.blit(text, (screen.get_width() - self.margin * 3, screen.get_height() // 2 - text.get_height() // 2))
 
-            # Render title
-            modal_title = title_font.render(title, True, WHITE)
-            modal_title = pygame.transform.rotate(modal_title, 90)
+        # Render DEBUG DATA
+        if self.debug == True:
+            debug_font = pygame.font.Font(None, 24)
 
-            # Render subtitle
-            modal_subtitle = medium_font.render(subtitle, True, WHITE)
-            modal_subtitle = pygame.transform.rotate(modal_subtitle, 90)
+            # Render state
+            state_text = debug_font.render("state: " + self.state, True, DEBUG_COLOR)
+            state_text = pygame.transform.rotate(state_text, 90)
+            x = screen.get_width() - state_text.get_width() * 3
+            y = screen.get_height() - state_text.get_height()
+            screen.blit(state_text, (x, y))
 
-            screen.blit(modal_title, (center[0] - 100, center[1] - modal_title.get_height() // 2))
-            screen.blit(modal_subtitle, (center[0] + 100, center[1] - modal_subtitle.get_height() // 2))
+            # Render counting time
+            counting_time_text = debug_font.render("counting_time: " + str(self.counting_time), True, DEBUG_COLOR)
+            counting_time_text = pygame.transform.rotate(counting_time_text, 90)
+            x = screen.get_width() - counting_time_text.get_width() * 2
+            y = screen.get_height() - counting_time_text.get_height()
+            screen.blit(counting_time_text, (x, y))
+
+            # Render elapsed time
+            elapsed_time_text = debug_font.render("elapsed_time: " + str(self.elapsed_time), True, DEBUG_COLOR)
+            elapsed_time_text = pygame.transform.rotate(elapsed_time_text, 90)
+            x = screen.get_width() - elapsed_time_text.get_width()
+            y = screen.get_height() - elapsed_time_text.get_height()
+            screen.blit(elapsed_time_text, (x, y))
+
 
     def events(self):
         for event in pygame.event.get():
@@ -144,6 +221,19 @@ class Wheel:
                 elif event.key == pygame.K_c:
                     self.credits += 1
                     self.sounds["coin-in"].play()
+                elif event.key == pygame.K_r and self.state == "show_prize":
+                    self.reset()
+                elif event.key == pygame.K_d:
+                    self.debug = not self.debug
+                elif event.key == pygame.K_m and self.credits > 0:
+                    if self.current_song < len(self.songs) - 1:
+                        self.songs[self.current_song].stop()
+                        self.playing_song = False
+                        self.current_song += 1
+                    else:
+                        self.songs[self.current_song].stop()
+                        self.playing_song = False
+                        self.current_song = 0
                 elif event.key == pygame.K_p:
                     if self.state == "idle":
                         if self.credits > 0:
@@ -168,6 +258,16 @@ class Wheel:
         # Rotate wheel
         self.rotation_angle += self.speed
 
+        # Play music
+        if self.playing_song == False:
+            self.songs[self.current_song].play(-1)
+            self.playing_song = True
+
+        # Change light radius (min radius 15)
+        radius = abs(math.sin(time.time()) * 18)
+        if radius > 15:
+            self.light_radius = radius
+
         if self.state == "playing":
             if self.speed < self.max_speed:
                 self.speed += self.acceleration
@@ -175,40 +275,26 @@ class Wheel:
                 self.state = "stopping"
 
         if self.state == "stopping":
-            spin = (10 * self.triangle_angle)
+            spin = (len(self.prizes) * self.triangle_angle)
             if self.rotation_angle >= self.initial_rotation + spin * 5 - (self.triangle_angle * self.prize_index):
                 self.speed = 0
                 half_triangle_angle = self.triangle_angle / 2
                 self.rotation_angle = half_triangle_angle * round(self.rotation_angle / half_triangle_angle)
 
-                if self.playing_sound == False:
+                if not pygame.mixer.get_busy():
                     if self.prizes[self.prize_index] == "Perdiste":
                         self.sounds["you-lose"].play()
                     else:
                         self.sounds["you-win"].play()
-
-                    self.playing_sound = True
-
-                if not self.counting_time:
-                    self.start_time = pygame.time.get_ticks()
-                    self.counting_time = True
-                else:
-                    elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000
-
-                    if elapsed_time > 2:
-                        self.counting_time = False
-                        self.state = "show_prize"
+                
+                self.state = "show_prize"
 
         if self.state == "show_prize":
-            if not self.counting_time:
-                self.start_time = pygame.time.get_ticks()
-                self.counting_time = True
+            if self.prizes[self.prize_index] == "Perdiste":
+                # Wait 5 seconds before changing state
+                self.wait()
+                if self.elapsed_time > 5:
+                    self.reset()
             else:
-                elapsed_time = (pygame.time.get_ticks() - self.start_time) / 1000
-
-                if elapsed_time > 10:
-                    self.counting_time = False
-                    self.playing_sound = False
-                    self.state = "idle"
-                    self.rotation_angle = self.initial_rotation
-                    self.start_time = None
+                if not pygame.mixer.get_busy():
+                    self.sounds["you-win"].play()
