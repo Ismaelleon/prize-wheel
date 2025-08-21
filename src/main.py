@@ -20,4 +20,4 @@ wheel = Wheel()
 while True:
     wheel.render(screen)
     wheel.events()
-    wheel.update()
+    wheel.update(screen)

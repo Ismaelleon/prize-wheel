@@ -1,5 +1,5 @@
 import pygame, sys, os, math, random, time
-#from confetti import Confetti
+from confetti import Confetti
 
 # CONSTANTS 
 WHITE = (255, 255, 255)
@@ -25,6 +25,7 @@ class Wheel:
         self.credits = 0
         self.spins = 0
         self.spinned_angle = 0
+        # FIX LATER so we can change the number of prizes
         self.initial_rotation = self.triangle_angle * 4.5
         self.rotation_angle = self.initial_rotation
         self.speed = 0
@@ -37,6 +38,10 @@ class Wheel:
         self.elapsed_time = 0
         self.counting_time = False
         self.light_radius = 15
+        self.confetti = []
+        self.max_confetti = 500
+        self.stop_confetti = False
+        self.sound_channel = None
         self.playing_song = False
 
         self.images = {
@@ -69,6 +74,10 @@ class Wheel:
         self.start_time = 0
         self.elapsed_time = 0
         self.counting_time = False
+        self.stop_confetti = False
+        self.songs[self.current_song].set_volume(1)
+        self.confetti = []
+        self.rotation_angle = self.initial_rotation
 
     def wait(self):
         if not self.counting_time:
@@ -131,8 +140,9 @@ class Wheel:
                 pygame.draw.polygon(screen, fill_color, [center, first_cathetus, second_cathetus])
 
             # Render prize names
+            prize_font = pygame.font.Font(None, 480 // len(self.prizes))
             mid_angle = angle + (self.triangle_angle / 2)  # middle of the wedge
-            prize = medium_font.render(self.prizes[i], True, (240, 224, 103))
+            prize = prize_font.render(self.prizes[i], True, (240, 224, 103))
 
             # Convert radians -> degrees and rotate so it's upright in the wedge
             text_angle_deg = -math.degrees(mid_angle)
@@ -185,6 +195,16 @@ class Wheel:
 
                 screen.blit(text, (screen.get_width() - self.margin * 3, screen.get_height() // 2 - text.get_height() // 2))
 
+        # Render confetti
+        for c in self.confetti:
+            rect_surf = pygame.Surface((10, 20), pygame.SRCALPHA)
+            rect_surf.fill(c.color)
+
+            rotated_surf = pygame.transform.rotate(rect_surf, c.angle)
+            rotated_rect = rotated_surf.get_rect(center=(c.x, c.y))
+
+            screen.blit(rotated_surf, rotated_rect.topleft)
+
         # Render DEBUG DATA
         if self.debug == True:
             debug_font = pygame.font.Font(None, 24)
@@ -192,23 +212,38 @@ class Wheel:
             # Render state
             state_text = debug_font.render("state: " + self.state, True, DEBUG_COLOR)
             state_text = pygame.transform.rotate(state_text, 90)
-            x = screen.get_width() - state_text.get_width() * 3
+            x = screen.get_width() - state_text.get_width() * 5
             y = screen.get_height() - state_text.get_height()
             screen.blit(state_text, (x, y))
 
             # Render counting time
             counting_time_text = debug_font.render("counting_time: " + str(self.counting_time), True, DEBUG_COLOR)
             counting_time_text = pygame.transform.rotate(counting_time_text, 90)
-            x = screen.get_width() - counting_time_text.get_width() * 2
+            x = screen.get_width() - counting_time_text.get_width() * 4
             y = screen.get_height() - counting_time_text.get_height()
             screen.blit(counting_time_text, (x, y))
 
             # Render elapsed time
             elapsed_time_text = debug_font.render("elapsed_time: " + str(self.elapsed_time), True, DEBUG_COLOR)
             elapsed_time_text = pygame.transform.rotate(elapsed_time_text, 90)
-            x = screen.get_width() - elapsed_time_text.get_width()
+            x = screen.get_width() - elapsed_time_text.get_width() * 3
             y = screen.get_height() - elapsed_time_text.get_height()
             screen.blit(elapsed_time_text, (x, y))
+
+            # Render winned prize
+            if self.prize_index != None:
+                won_prize_text = debug_font.render("won prize: " + self.prizes[self.prize_index], True, DEBUG_COLOR)
+                won_prize_text = pygame.transform.rotate(won_prize_text, 90)
+                x = screen.get_width() - won_prize_text.get_width() * 2
+                y = screen.get_height() - won_prize_text.get_height()
+                screen.blit(won_prize_text, (x, y))
+
+            # Render prize index
+            prize_index_text = debug_font.render("prize_index: " + str(self.prize_index), True, DEBUG_COLOR)
+            prize_index_text = pygame.transform.rotate(prize_index_text, 90)
+            x = screen.get_width() - prize_index_text.get_width()
+            y = screen.get_height() - prize_index_text.get_height()
+            screen.blit(prize_index_text, (x, y))
 
 
     def events(self):
@@ -219,7 +254,7 @@ class Wheel:
                     sys.exit()
                 elif event.key == pygame.K_c:
                     self.credits += 1
-                    self.sounds["coin-in"].play()
+                    self.sound_channel = self.sounds["coin-in"].play()
                 elif event.key == pygame.K_r and self.state == "show_prize":
                     self.reset()
                 elif event.key == pygame.K_d:
@@ -237,7 +272,8 @@ class Wheel:
                     if self.state == "idle":
                         if self.credits > 0:
                             self.state = "playing"
-                            self.sounds["playing"].play()
+                            self.songs[self.current_song].set_volume(0)
+                            self.sound_channel = self.sounds["playing"].play()
                             self.credits -= 1
                             self.spins += 1
 
@@ -253,7 +289,7 @@ class Wheel:
                             if self.state == "idle":
                                 pass
 
-    def update(self):
+    def update(self, screen):
         # Rotate wheel
         self.rotation_angle += self.speed
 
@@ -275,26 +311,47 @@ class Wheel:
 
         if self.state == "stopping":
             spin = (len(self.prizes) * self.triangle_angle)
-            if self.rotation_angle >= self.initial_rotation + spin * 5 - (self.triangle_angle * self.prize_index):
+            if self.rotation_angle >= self.initial_rotation + spin * 2 - (self.triangle_angle * self.prize_index):
                 self.speed = 0
                 half_triangle_angle = self.triangle_angle / 2
                 self.rotation_angle = half_triangle_angle * round(self.rotation_angle / half_triangle_angle)
-                self.initial_rotation = self.rotation_angle
+                
+                # Stop the playing sound
+                self.sounds["playing"].stop()
 
-                if not pygame.mixer.get_busy():
-                    if self.prizes[self.prize_index] == "Perdiste":
-                        self.sounds["you-lose"].play()
-                    else:
-                        self.sounds["you-win"].play()
+                if self.prizes[self.prize_index] == "Perdiste":
+                    self.sound_channel = self.sounds["you-lose"].play()
+                else:
+                    self.sound_channel = self.sounds["you-win"].play()
                 
                 self.state = "show_prize"
 
         if self.state == "show_prize":
+            # If mixer is not busy, set music volume to 1
+            if self.sound_channel.get_sound() != self.sounds["you-win"] and self.sound_channel.get_sound() != self.sounds["you-lose"]:
+                self.songs[self.current_song].set_volume(1)
+
             if self.prizes[self.prize_index] == "Perdiste":
                 # Wait 5 seconds before changing state
                 self.wait()
                 if self.elapsed_time > 5:
                     self.reset()
             else:
-                if not pygame.mixer.get_busy():
-                    self.sounds["you-win"].play()
+                if len(self.confetti) < self.max_confetti and not self.stop_confetti:
+                    right_confetti = Confetti(0, 0, "right")
+                    left_confetti = Confetti(0, screen.get_height(), "left")
+
+                    self.confetti.append(right_confetti)
+                    self.confetti.append(left_confetti)
+                else:
+                    # Stop throwing confetti
+                    self.stop_confetti = True
+
+                # Update confetti
+                if len(self.confetti) > 0:
+                    for confetti in self.confetti:
+                        confetti.update()
+
+                        # Remove confetti if not shown on screen
+                        if confetti.x > screen.get_width() + confetti.w and self.stop_confetti:
+                            self.confetti.remove(confetti)
