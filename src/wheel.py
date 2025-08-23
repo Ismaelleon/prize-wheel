@@ -24,12 +24,13 @@ class Wheel:
         self.state = "idle"
         self.credits = 0
         self.spins = 0
+        self.total_spins = 10
         self.spinned_angle = 0
         # FIX LATER so we can change the number of prizes
         self.initial_rotation = self.triangle_angle * 4.5
         self.rotation_angle = self.initial_rotation
         self.speed = 0
-        self.max_speed = 0.075
+        self.max_speed = 0.125
         self.acceleration = 0.001
         self.radius = 350
         self.margin = 100
@@ -68,6 +69,18 @@ class Wheel:
 
             song_file = pygame.mixer.Sound("assets/music/" + song + ".mp3")
             self.songs.append(song_file)
+
+        # Load spins when initializing game
+        self.load_spins()
+
+    def load_spins(self):
+        with open("spins.txt", "r") as file:
+            spins = file.read()
+            self.spins = int(spins)
+
+    def save_spins(self):
+        with open("spins.txt", "w") as file:
+            file.write(str(self.spins))
 
     def reset(self):
         self.state = "idle"
@@ -196,18 +209,19 @@ class Wheel:
                 screen.blit(text, (screen.get_width() - self.margin * 3, screen.get_height() // 2 - text.get_height() // 2))
 
         # Render confetti
-        for c in self.confetti:
-            rect_surf = pygame.Surface((10, 20), pygame.SRCALPHA)
-            rect_surf.fill(c.color)
-
-            rotated_surf = pygame.transform.rotate(rect_surf, c.angle)
-            rotated_rect = rotated_surf.get_rect(center=(c.x, c.y))
-
-            screen.blit(rotated_surf, rotated_rect.topleft)
+        for confetti in self.confetti:
+            confetti.render(screen)
 
         # Render DEBUG DATA
         if self.debug == True:
             debug_font = pygame.font.Font(None, 24)
+
+            # Render number of spins
+            spins_text = debug_font.render("spins: " + str(self.spins), True, DEBUG_COLOR)
+            spins_text = pygame.transform.rotate(spins_text, 90)
+            x = screen.get_width() - spins_text.get_width() * 6
+            y = screen.get_height() - spins_text.get_height()
+            screen.blit(spins_text, (x, y))
 
             # Render state
             state_text = debug_font.render("state: " + self.state, True, DEBUG_COLOR)
@@ -276,6 +290,8 @@ class Wheel:
                             self.sound_channel = self.sounds["playing"].play()
                             self.credits -= 1
                             self.spins += 1
+                            
+                            self.save_spins()
 
                             # Every 100 spins, win a rare prize
                             if self.spins != 0 and self.spins % 100 == 0:
@@ -311,7 +327,7 @@ class Wheel:
 
         if self.state == "stopping":
             spin = (len(self.prizes) * self.triangle_angle)
-            if self.rotation_angle >= self.initial_rotation + spin * 2 - (self.triangle_angle * self.prize_index):
+            if self.rotation_angle >= self.initial_rotation + spin * self.total_spins - (self.triangle_angle * self.prize_index):
                 self.speed = 0
                 half_triangle_angle = self.triangle_angle / 2
                 self.rotation_angle = half_triangle_angle * round(self.rotation_angle / half_triangle_angle)

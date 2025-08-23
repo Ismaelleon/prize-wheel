@@ -28,6 +28,15 @@ class Confetti:
         ]
         self.color = random.choice(self.colors)
 
+    def render(self, screen):
+        rect_surf = pygame.Surface((10, 20), pygame.SRCALPHA)
+        rect_surf.fill(self.color)
+
+        rotated_surf = pygame.transform.rotate(rect_surf, self.angle)
+        rotated_rect = rotated_surf.get_rect(center=(self.x, self.y))
+
+        screen.blit(rotated_surf, rotated_rect.topleft)
+
     def update(self):
         # Confetti physics
         self.x += self.xvel
