@@ -15,8 +15,13 @@ class Wheel:
         self.title = os.getenv("TITLE")
         self.subtitle = os.getenv("SUBTITLE")
         self.common_prizes = os.getenv("COMMON_PRIZES").split(", ")
+        self.special_prizes = os.getenv("SPECIAL_PRIZES").split(", ")
         self.rare_prizes = os.getenv("RARE_PRIZES").split(", ")
-        self.prizes = self.common_prizes + self.rare_prizes
+        self.prizes = self.common_prizes + self.special_prizes + self.rare_prizes
+
+        # Intervals of spins for special and rare prizes
+        self.special_interval = 25
+        self.rare_interval = 500
 
         self.triangle_angle = ((360 * math.pi / 180) / len(self.prizes))
 
@@ -261,6 +266,39 @@ class Wheel:
             y = screen.get_height() - prize_index_text.get_height()
             screen.blit(prize_index_text, (x, y))
 
+    def decide_prize(self):
+        # Every 100 spins, win a rare prize
+        common_quantity = len(self.common_prizes)
+        if self.spins != 0 and self.spins % self.rare_interval == 0:
+            special_quantity = len(self.special_prizes)
+            rare_quantity = len(self.rare_prizes)
+
+            # Index inside rare prizes list
+            rare_index = 0
+
+            # If rare prizes has more than one prize get a random index
+            if rare_quantity != 0:
+                rare_index = random.randrange(0, rare_quantity)
+
+            # Select a random index from rare prizes array and add the length of common and special prizes
+            self.prize_index = common_quantity + special_quantity + rare_index
+        # Every 25 spins, win a special prize
+        elif self.spins != 0 and self.spins % self.special_interval == 0:
+            special_quantity = len(self.special_prizes)
+
+            # Index inside special prizes list
+            special_index = 0
+            
+            # If special prizes has more than one prize get a random index
+            if special_quantity != 0:
+                special_index = random.randrange(0, special_quantity)
+
+            # Select a random index from special prizes array and add the length of common prizes
+            self.prize_index = common_quantity + special_index
+        # Each spin, win a common prize (you lose included)
+        else:
+            # Select a random index from common prizes array
+            self.prize_index = random.randrange(0, common_quantity)
 
     def events(self):
         for event in pygame.event.get():
@@ -294,18 +332,14 @@ class Wheel:
                             self.spins += 1
                             
                             self.save_spins()
-
-                            # Every 100 spins, win a rare prize
-                            if self.spins != 0 and self.spins % 100 == 0:
-                                # Select a random index from rare prizes array and add the length of common prizes
-                                self.prize_index = len(self.common_prizes) - 1 + random.randrange(0, len(self.rare_prizes) - 1)
-                            else:
-                                # Select a random index from common prizes array
-                                self.prize_index = random.randrange(0, len(self.common_prizes) - 1)
-
+                            self.decide_prize()
                         else:
                             if self.state == "idle":
                                 pass
+                elif event.key == pygame.K_MINUS and self.debug:
+                    self.spins -= 1
+                elif event.key == pygame.K_PLUS and self.debug:
+                    self.spins += 1
 
     def update(self, screen):
         # Rotate wheel
