@@ -46,7 +46,8 @@ class Wheel:
         self.playing_song = False
 
         self.images = {
-            "title": pygame.image.load("assets/images/title.png")
+            "background": pygame.image.load("assets/images/background.png"),
+            "title": pygame.image.load("assets/images/title.png"),
         }
 
         # Rotate all images
@@ -104,7 +105,8 @@ class Wheel:
         pygame.display.update()
 
         # Background
-        pygame.draw.rect(screen, BLACK, (0, 0, screen.get_width(), screen.get_height()))
+        bg = pygame.transform.scale(self.images["background"], (screen.get_width(), screen.get_height()))
+        screen.blit(bg, (0, 0))
 
         # Render title
         new_height = screen.get_height() - self.margin * 2
